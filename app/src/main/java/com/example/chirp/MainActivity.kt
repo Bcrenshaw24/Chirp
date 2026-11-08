@@ -1,6 +1,16 @@
 package com.example.chirp
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import android.os.Bundle
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -28,10 +38,19 @@ class MainActivity : ComponentActivity() {
     private val distanceProvider: DistanceProvider = SimulatedDistanceProvider()
     private lateinit var haptics: DistanceHaptics
     private var scanning by mutableStateOf(false)
+    private lateinit var audioCapture: AudioCapture
+    private var audioJob: Job? = null
+    private var audioBusy by mutableStateOf(false)
+    private var audioStatus by mutableStateOf("Configurable chirp or recording-only baseline • no distance estimate")
+    private val microphonePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        audioStatus = if (granted) "Microphone allowed. Tap Start test to begin."
+        else "Microphone denied. Simulation still works. Allow Microphone in App permissions to retry."
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         haptics = DistanceHaptics(applicationContext)
+        audioCapture = AudioCapture(applicationContext)
         enableEdgeToEdge()
         setContent {
             ChirpTheme {
@@ -60,9 +79,23 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                ScanScreen(scanning, distance, message) {
-                    if (scanning) stopScanning() else scanning = true
-                }
+                ScanScreen(
+                    scanning, distance, message,
+                    onToggleScan = {
+                        if (scanning) stopScanning() else {
+                            stopAudioCapture()
+                            scanning = true
+                        }
+                    },
+                    audioPanel = {
+                        AudioDiagnosticPanel(audioBusy, audioStatus,
+                            onCapture = { config -> if (audioBusy) stopAudioCapture() else startAudioCapture(config) },
+                            onPermissions = {
+                                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    Uri.parse("package:$packageName")))
+                            })
+                    },
+                )
             }
         }
     }
@@ -72,7 +105,52 @@ class MainActivity : ComponentActivity() {
         haptics.stop()
     }
 
+    private fun startAudioCapture(config: AcousticConfig) {
+        stopScanning()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            audioStatus = "Microphone access is needed only for the audio test. Grant it, then tap Start test again."
+            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        audioBusy = true
+        audioStatus = if (config.baseline) "Recording baseline…" else "Capturing ${config.band.label}, ${config.durationMs} ms chirp…"
+        audioJob = lifecycleScope.launch {
+            try {
+                val result = audioCapture.capture(config)
+                val directory = audioCapture.export(result)
+                val report = checkNotNull(result.report)
+                val peak = report.peaks.firstOrNull()
+                val metrics = String.format(Locale.getDefault(),
+                    "Band RMS %.4g • pre-roll %.4g • later %.4g", report.bandRms, report.preRollBandRms, report.laterBandRms)
+                val peakText = peak?.let { String.format(Locale.getDefault(),
+                    "Max |NCC| %.4f (signed %.4f) at %.2f ms, sample %d", kotlin.math.abs(it.signedNcc), it.signedNcc, it.timeMs, it.lagSamples)
+                } ?: "No nonzero NCC candidates"
+
+                audioStatus = "Captured ${result.recordedPcm.size / 2} frames at ${result.sampleRateHz} Hz. " +
+                    "Source: ${AudioCapture.sourceName(result.audioSource)}; raw support reported: ${result.unprocessedSupported}. " +
+                    "\n${if (config.baseline) "Recording-only baseline" else "Active chirp"}: ${config.band.label}, ${config.durationMs} ms reference. " +
+                    "\n$metrics\n$peakText\n${result.overlap}\n" +
+                    "Saved files/audio-diagnostic/${directory.name}. Latest PCM exports also retained. " +
+                    "Other peaks and signal statistics: metadata.txt / ChirpAudio logs. Candidates are not confirmed detections or distances."
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                audioStatus = "Audio test failed: ${failure.message ?: failure.javaClass.simpleName}"
+            } finally {
+                audioBusy = false
+            }
+        }
+    }
+
+    private fun stopAudioCapture() {
+        if (audioJob?.isActive == true) {
+            audioJob?.cancel()
+            audioStatus = "Audio test stopped."
+        }
+    }
+
     override fun onPause() {
+        stopAudioCapture()
         stopScanning()
         super.onPause()
     }
@@ -84,6 +162,7 @@ private fun ScanScreen(
     distance: Double?,
     message: String?,
     onToggleScan: () -> Unit,
+    audioPanel: @Composable () -> Unit = {},
 ) {
     Scaffold { padding ->
         Column(
@@ -136,8 +215,9 @@ private fun ScanScreen(
                 Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
             }
-            Text("Demo values are random, not measured. No microphone or speaker is used.",
+            Text("Demo values are random, not measured. Simulated scanning uses no microphone or speaker.",
                 textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium)
+            audioPanel()
         }
     }
 }
@@ -145,5 +225,5 @@ private fun ScanScreen(
 @Preview(showBackground = true)
 @Composable
 private fun ScanPreview() {
-    ChirpTheme { ScanScreen(false, null, null) {} }
+    ChirpTheme { ScanScreen(false, null, null, onToggleScan = {}) }
 }
