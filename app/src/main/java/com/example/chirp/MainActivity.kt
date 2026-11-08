@@ -88,6 +88,11 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     audioPanel = {
+                        Button(onClick = {
+                            stopScanning()
+                            stopAudioCapture()
+                            startActivity(Intent(this@MainActivity, com.example.chirp.spatial.SpatialMemoryActivity::class.java))
+                        }) { Text("Open Spatial Memory") }
                         AudioDiagnosticPanel(audioBusy, audioStatus,
                             onCapture = { config -> if (audioBusy) stopAudioCapture() else startAudioCapture(config) },
                             onPermissions = {
