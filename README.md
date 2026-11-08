@@ -16,16 +16,15 @@ estimates its distance live. Handheld use, alerts and an accuracy check are in p
 
 ### Using it
 
-1. Lay the phone flat with the bottom edge (speaker and mic) facing open space, media volume about half.
-2. Tap **Start scanning** and keep the area clear for ~3 s while it calibrates.
-3. Bring something in front of the bottom edge. The radar and readout show its distance and
-   whether it's getting closer; the screen turns amber, then red, as it gets near.
+1. For best quality, ensure your phone is only using your bottom speaker.
+2. Hold phone perpendicular to the ground with the charging port facing away from you. You should be pointing in a relatively clear area.
+3. Scan and calibrate!
 
 **Settings** on the main screen: **Sound** (Silent 15–20 kHz or Audible 8–14 kHz), **Handheld mode**
 and **Vibrate on alert**. The collapsible **Signal lab** at the bottom holds the live plots, the
 accuracy check and the diagnostics.
 
-### Pipeline
+### Sonar Pipeline
 
 ```
 DuplexAudioSession ─ mic blocks ─► SonarProcessor
@@ -133,7 +132,6 @@ If "No chirp heard" persists, switch **Sound** to **Audible** (8–14 kHz). If t
 
 ### Limitations
 
-- **Distance only, no direction.** The nearest reflector anywhere in a wide beam wins, including the hand holding the phone.
 - **Range is about 0.15–3 m.** Closer echoes blur into the speaker's own sound; small or soft objects near 3 m may be missed.
 - **Phone audio varies.** Speakers fade toward 20 kHz and some phones' audio processing can't be fully switched off.
   The Signal lab's speaker → mic response plot shows how your unit does. 15–20 kHz is audible to some young people and pets.
@@ -188,7 +186,7 @@ The carrier oscillation is removed with the analytic signal: $\mathcal{H}$ is th
 computed by zeroing negative frequencies in the FFT and doubling positive ones:
 
 ```math
-\operatorname{env}(r) = \big|\, r + j\,\mathcal{H}\{r\} \,\big|
+\mathrm{env}(r) = \big|\, r + j\,\mathcal{H}\{r\} \,\big|
 ```
 
 The peak at sample $i$ is refined with a parabola through its neighbours:
@@ -203,7 +201,7 @@ From $N = 30$ clear-scene profiles $p_n$: a template (leakage + static room) and
 
 ```math
 T[k] = \frac{1}{N}\sum_{n=1}^{N} p_n[k], \qquad
-\sigma[k] = \sqrt{\frac{1}{N-1}\sum_{n=1}^{N} \operatorname{env}\!\big(p_n - T\big)[k]^2}
+\sigma[k] = \sqrt{\frac{1}{N-1}\sum_{n=1}^{N} \mathrm{env}\!\big(p_n - T\big)[k]^2}
 ```
 
 $\sigma[k]$ is smoothed over about 4 pulse widths. The speaker→mic response across the band:
@@ -243,7 +241,7 @@ p \approx a\,T_s + b\,D_s, \qquad D_s = \frac{T_{s+h} - T_{s-h}}{2h}
 #### 6. Detection
 
 ```math
-e[k] = \operatorname{env}\!\big(p - g\,T_s\big)[k], \qquad
+e[k] = \mathrm{env}\!\big(p - g\,T_s\big)[k], \qquad
 \text{echo at } k \iff e[k] > K\,\sigma[k] \ \text{and}\ e[k] \text{ is a local max}, \quad K = 5
 ```
 
@@ -264,7 +262,7 @@ B \leftarrow B + \frac{p - B}{\tau}, \qquad \tau = 15 \text{ periods } (1.5\ \te
 A static change fades as $e^{-n/\tau}$. One that starts $R$ times above the threshold drops below it after
 $n \approx \tau \ln R$ periods. An object moving at speed $v$ crosses a range bin in $\Delta R / v$
 (0.34 s at 10 cm/s, much less than $\tau$), so it stays visible. Bins around the confirmed track are frozen
-only when $`\lvert\operatorname{env}(p)\rvert > \lvert\operatorname{env}(g\,T_s)\rvert`$ there (energy added = real object;
+only when $`\lvert\mathrm{env}(p)\rvert > \lvert\mathrm{env}(g\,T_s)\rvert`$ there (energy added = real object;
 energy removed = ghost, which must fade).
 
 #### 8. Tracking (alpha-beta filter)
