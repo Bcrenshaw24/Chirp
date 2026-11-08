@@ -9,7 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
-import com.example.chirp.sonar.ui.DebugScreen
+import com.example.chirp.sonar.ui.SonarScreen
 import com.example.chirp.sonar.ui.SonarViewModel
 import com.example.chirp.ui.theme.ChirpTheme
 
@@ -24,7 +24,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            ChirpTheme { DebugScreen(viewModel, onStart = ::startWithPermission) }
+            ChirpTheme { SonarScreen(viewModel, onStart = ::startWithPermission) }
         }
     }
 
