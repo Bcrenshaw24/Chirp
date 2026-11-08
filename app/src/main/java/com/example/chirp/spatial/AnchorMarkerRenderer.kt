@@ -98,6 +98,18 @@ internal class AnchorMarkerRenderer {
         glDrawArrays(GL_TRIANGLES, 0, 24)
     }
 
+    /** Uses the exact MVP uploaded by the preceding draw; coordinates are GL-view-local pixels. */
+    fun projectedOrigin(width: Int, height: Int): String {
+        // Multiplying MVP by (0,0,0,1) selects its fourth column (column-major).
+        val w = mvp[15]
+        if (!w.isFinite() || w <= 0f) return "behind-camera"
+        val x = mvp[12] / w
+        val y = mvp[13] / w
+        val z = mvp[14] / w
+        return "px=(${(x + 1f) * width / 2f},${(1f - y) * height / 2f}) ndcZ=$z " +
+            "inView=${x in -1f..1f && y in -1f..1f && z in -1f..1f}"
+    }
+
     fun end() {
         glDisableVertexAttribArray(position); glDisableVertexAttribArray(brightness)
         glDisable(GL_DEPTH_TEST)

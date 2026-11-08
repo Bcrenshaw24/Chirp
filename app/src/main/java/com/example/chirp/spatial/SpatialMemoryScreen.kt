@@ -1,6 +1,7 @@
 package com.example.chirp.spatial
 
 import android.opengl.GLSurfaceView
+import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -15,6 +16,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 
 /** Overlays never resize or replace the GL view, including while the object sheet is open. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,7 +50,13 @@ internal fun SpatialMemoryScreen(
             contentDescription = "Live AR camera. Aim at an object's supporting surface and use Tag Object, or tap its position in the preview."
         })
         // The reticle is at the GL view center, the exact point used by center hit tests.
-        Canvas(Modifier.align(Alignment.Center).size(32.dp).clearAndSetSemantics { }) {
+        Canvas(Modifier.align(Alignment.Center).size(32.dp).onGloballyPositioned { coordinates ->
+            if (Log.isLoggable("ChirpSpatial", Log.DEBUG)) {
+                val origin = coordinates.positionInWindow()
+                Log.d("ChirpSpatial", "reticleCenterWindow=(${origin.x + coordinates.size.width / 2f}," +
+                    "${origin.y + coordinates.size.height / 2f})")
+            }
+        }.clearAndSetSemantics { }) {
             val radius = size.minDimension * 0.3f
             drawCircle(Color.Black, radius, style = Stroke(5.dp.toPx()))
             drawCircle(Color.White, radius, style = Stroke(2.dp.toPx()))
@@ -93,7 +102,7 @@ internal fun SpatialMemoryScreen(
                             Text("Saved Objects (${snapshot.objects.size})")
                         }
                     }
-                    Text("Aim the center ring at the object's surface.", style = MaterialTheme.typography.bodySmall)
+                    Text("Aim the center ring at the object's surface. Pulses indicate proximity, not a clear route.", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -111,7 +120,8 @@ internal fun SpatialMemoryScreen(
             }
             Text("This session only. Leaving or restarting clears locations. Positions can drift.",
                 style = MaterialTheme.typography.bodyMedium)
-            Text("Cyan markers show saved locations. The selected marker is larger and yellow.",
+            Text(if (SHOW_SPATIAL_MARKERS) "Cyan markers show saved locations. The selected marker is larger and yellow."
+                else "AR markers are hidden for this demo. Use distance, speech, and proximity pulses.",
                 style = MaterialTheme.typography.bodyMedium)
             if (snapshot.objects.isEmpty()) Text("No saved objects. Close this panel and use Tag Object.")
             snapshot.objects.forEach { item ->
