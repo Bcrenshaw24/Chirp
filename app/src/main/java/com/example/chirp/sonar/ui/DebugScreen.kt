@@ -2,148 +2,65 @@ package com.example.chirp.sonar.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.chirp.sonar.alerts.AlertConfig
-import com.example.chirp.sonar.alerts.AlertLevel
 import com.example.chirp.sonar.dsp.Signal
-import com.example.chirp.sonar.ranging.Ranging
 import com.example.chirp.sonar.SonarConfig
 import com.example.chirp.sonar.SonarEngine
 import com.example.chirp.sonar.SonarFrame
 import com.example.chirp.sonar.SonarState
-import com.example.chirp.sonar.tracking.Trend
 import kotlin.math.abs
 import kotlin.math.log10
 
-/** Test bench: live distance plus every intermediate signal, so failures are visible, not guessed. */
+/**
+ * Test bench: every intermediate signal plus the accuracy check, so failures are visible, not guessed.
+ * Shown inside the "Signal lab" section of [SonarScreen].
+ */
 @Composable
-fun DebugScreen(vm: SonarViewModel, onStart: () -> Unit) {
+fun DebugPanels(vm: SonarViewModel) {
     val frame by vm.frame.collectAsState()
     val status by vm.status.collectAsState()
     val history by vm.history.collectAsState()
     val running by vm.running.collectAsState()
-    val error by vm.error.collectAsState()
     val config by vm.config.collectAsState()
-    val vibrate by vm.vibrate.collectAsState()
-    val handheld by vm.handheld.collectAsState()
 
-    Scaffold { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("Chirp sonar", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            AlertBanner(frame)
-            Readout(frame, running)
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = { if (running) vm.stop() else onStart() }) { Text(if (running) "Stop" else "Start") }
-                OutlinedButton(onClick = vm::recalibrate, enabled = running && status.state == SonarState.RUNNING) {
-                    Text("Recalibrate")
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        frame?.let { f ->
+            val track = f.track
+            val nearest = f.detection?.nearest
+            if (track != null || nearest != null) Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Tracker", style = MaterialTheme.typography.titleSmall)
+                    track?.let {
+                        Text("%+.2f m/s".format(it.velocityMps) +
+                            (it.timeToContactSec?.let { t -> "  •  contact in %.1f s".format(t) } ?: "") +
+                            (if (it.missed > 0) "  •  coasting (${it.missed} missed)" else ""),
+                            style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                    }
+                    nearest?.let {
+                        Text("Nearest echo SNR %.1f dB  •  %d echo(es)".format(it.snrDb, f.detection?.echoes?.size ?: 0),
+                            style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                    }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("15–20 kHz" to SonarConfig.INAUDIBLE, "8–14 kHz (audible)" to SonarConfig.AUDIBLE).forEach { (label, c) ->
-                    FilterChip(selected = config == c, enabled = !running, onClick = { vm.selectConfig(c) }, label = { Text(label) })
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(checked = handheld, onCheckedChange = vm::setHandheld)
-                Text(
-                    if (handheld) "Handheld: background adapts (~1.5 s)" else "Fixed baseline (phone on a table)",
-                    Modifier.padding(start = 8.dp),
-                )
-            }
-            if (vm.vibrationAvailable) Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(checked = vibrate, onCheckedChange = vm::setVibrate)
-                Text("Vibrate on alert", Modifier.padding(start = 8.dp))
-            }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            if (running) Text(status.message, style = MaterialTheme.typography.bodyMedium)
-            if (frame?.state == SonarState.CALIBRATING) LinearProgressIndicator(
-                progress = { frame?.calibrationProgress ?: 0f }, modifier = Modifier.fillMaxWidth(),
-            )
-            if (!running && frame == null) Text(
-                "Put the phone on a table, bottom edge (speaker + mic) facing open space. Set media volume " +
-                    "to about half. Start, keep the area clear for ~3 s while it calibrates, then bring an " +
-                    "object (a book, your hand, a box) in front of the bottom edge.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-
-            frame?.let { f -> Plots(f, config, history, status) }
-            if (frame != null) AccuracyCard(vm, canMeasure = running && status.state == SonarState.RUNNING)
-            Diagnostics(frame, status, config)
+            Plots(f, config, history, status)
+            AccuracyCard(vm, canMeasure = running && status.state == SonarState.RUNNING)
         }
-    }
-}
-
-@Composable
-private fun AlertBanner(frame: SonarFrame?) {
-    val alert = frame?.alert ?: return
-    if (alert.level == AlertLevel.NONE) return
-    val warning = alert.level == AlertLevel.WARNING
-    Surface(
-        color = if (warning) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.tertiaryContainer,
-        contentColor = if (warning) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onTertiaryContainer,
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(if (warning) "WARNING" else "CAUTION", fontWeight = FontWeight.Bold, fontSize = 22.sp)
-            Text(alert.reason)
-        }
-    }
-}
-
-@Composable
-private fun Readout(frame: SonarFrame?, running: Boolean) {
-    val track = frame?.track
-    val nearest = frame?.detection?.nearest
-    val shown = track?.takeIf { it.confirmed }?.distanceM ?: nearest?.distanceM
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text(
-                shown?.let { "%.2f m".format(it) } ?: "— m",
-                fontSize = 48.sp, fontWeight = FontWeight.Bold,
-            )
-            Text(shown?.let { "%.1f ft".format(it * Ranging.FEET_PER_METER) } ?: if (running) "No object detected" else "Stopped")
-            if (track != null) {
-                val trend = when (track.trend) {
-                    Trend.APPROACHING -> "APPROACHING"
-                    Trend.RECEDING -> "moving away"
-                    Trend.STEADY -> "steady"
-                    Trend.UNKNOWN -> "confirming…"
-                }
-                Text("$trend  •  %+.2f m/s".format(track.velocityMps) +
-                    (track.timeToContactSec?.let { "  •  contact in %.1f s".format(it) } ?: "") +
-                    (if (track.missed > 0) "  •  coasting (${track.missed} missed)" else ""))
-            }
-            nearest?.let { Text("Nearest echo SNR %.1f dB  •  %d echo(es)".format(it.snrDb, frame.detection?.echoes?.size ?: 0)) }
-        }
+        if (frame == null) Text(
+            "Start scanning to see live signals, echo detection and the accuracy check here.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Diagnostics(frame, status, config)
     }
 }
 
