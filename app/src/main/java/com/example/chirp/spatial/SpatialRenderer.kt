@@ -21,6 +21,8 @@ internal class SpatialRenderer(
     private val publish: (SpatialSnapshot) -> Unit,
 ) : GLSurfaceView.Renderer {
     private val background = CameraBackground()
+    private val markers = AnchorMarkerRenderer()
+    private var selectedId: Int? = null
     private val commands = ConcurrentLinkedQueue<(Frame) -> Unit>()
     private val anchors = linkedMapOf<Int, Pair<String, Anchor>>()
     private var pending: Anchor? = null
@@ -44,6 +46,7 @@ internal class SpatialRenderer(
     fun save(name: String) { commands.add {
         pending?.let { anchors[++nextId] = name to it }; pending = null; lastPublish = 0
     } }
+    fun select(id: Int?) { commands.add { selectedId = id } }
     fun cancel() { commands.add { pending?.detach(); pending = null; lastPublish = 0 } }
     fun delete(id: Int) { commands.add { anchors.remove(id)?.second?.detach(); lastPublish = 0 } }
     // Called only after GLSurfaceView.onPause has joined the rendering thread.
@@ -51,19 +54,36 @@ internal class SpatialRenderer(
         commands.clear(); pending?.detach(); pending = null
         anchors.values.forEach { it.second.detach() }; anchors.clear()
     }
-    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) { background.create() }
+    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+        background.create()
+        markers.create()
+    }
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         this.width = width; this.height = height; glViewport(0, 0, width, height)
     }
     override fun onDrawFrame(gl: GL10?) {
-        glClear(GL_COLOR_BUFFER_BIT)
+        glDepthMask(true)
+        glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
         val current = session() ?: return
         try {
             current.setDisplayGeometry(rotation(), width, height)
             current.setCameraTextureName(background.texture)
             val frame = current.update()
+            glDisable(GL_DEPTH_TEST)
+            glDepthMask(false)
             background.draw(frame)
+            glDepthMask(true)
             while (true) (commands.poll() ?: break).invoke(frame)
+            // Draw every camera frame, before the throttled Compose snapshot update.
+            if (frame.camera.trackingState == TrackingState.TRACKING) {
+                markers.begin(frame.camera)
+                for ((id, entry) in anchors) {
+                    if (entry.second.trackingState == TrackingState.TRACKING) {
+                        markers.draw(entry.second.pose, id == selectedId)
+                    }
+                }
+                markers.end()
+            }
             val now = android.os.SystemClock.elapsedRealtime()
             if (now - lastPublish < 350) return
             lastPublish = now
@@ -74,8 +94,8 @@ internal class SpatialRenderer(
             val status = when {
                 !tracking -> "Tracking unavailable: ${frame.camera.trackingFailureReason}. Move slowly; use good light and a textured surface."
                 notice != null -> notice!!
-                surface -> "Horizontal surface detected. Tap an object location or aim the center and save."
-                else -> "Tracking. Slowly scan a textured table or counter to detect a horizontal surface."
+                surface -> "Surface ready. Tap a location or aim the ring and use Tag Object."
+                else -> "Tracking. Slowly scan a textured table or counter."
             }
             val objects = anchors.map { (id, entry) ->
                 val (name, anchor) = entry
