@@ -64,7 +64,7 @@ import com.example.chirp.sonar.tracking.Trend
 import com.example.chirp.ui.theme.StatusColors
 
 @Composable
-fun SonarScreen(vm: SonarViewModel, onStart: () -> Unit) {
+fun SonarScreen(vm: SonarViewModel, onStart: () -> Unit, onOpenSpatial: () -> Unit = {}) {
     val frame by vm.frame.collectAsState()
     val status by vm.status.collectAsState()
     val running by vm.running.collectAsState()
@@ -120,6 +120,10 @@ fun SonarScreen(vm: SonarViewModel, onStart: () -> Unit) {
                 )
 
                 SignalLab(vm)
+
+                FilledTonalButton(onClick = onOpenSpatial, modifier = Modifier.fillMaxWidth()) {
+                    Text("Open Spatial Memory")
+                }
 
                 Spacer(Modifier.height(8.dp))
             }

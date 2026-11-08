@@ -1,6 +1,7 @@
 package com.example.chirp
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -11,6 +12,7 @@ import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
 import com.example.chirp.sonar.ui.SonarScreen
 import com.example.chirp.sonar.ui.SonarViewModel
+import com.example.chirp.spatial.SpatialMemoryActivity
 import com.example.chirp.ui.theme.ChirpTheme
 
 class MainActivity : ComponentActivity() {
@@ -24,7 +26,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            ChirpTheme { SonarScreen(viewModel, onStart = ::startWithPermission) }
+            ChirpTheme {
+                SonarScreen(
+                    viewModel,
+                    onStart = ::startWithPermission,
+                    onOpenSpatial = {
+                        // Sonar and ARCore must not share the mic/speaker/camera at once.
+                        viewModel.stop()
+                        startActivity(Intent(this, SpatialMemoryActivity::class.java))
+                    },
+                )
+            }
         }
     }
 
